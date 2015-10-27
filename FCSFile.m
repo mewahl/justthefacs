@@ -6,9 +6,6 @@ classdef FCSFile < handle
     % and interpret the .fcs file.
 
     properties
-        % These properties can be accessed by other functions but can only
-        % be modified by functions in this class.
-        
         FileName = '';
         BoundsX = [];
         BoundsY = [];
@@ -22,20 +19,25 @@ classdef FCSFile < handle
 
     methods
         function FF = FCSFile(FileName)
-            % This is the constructor function that will build a new
-            % FSCFile object given the filename. Notably, it identifies
-            % which filters correspond to FSC and SSC. If you prefer to use
-            % width ("flight-time") FSC and SSC values for gating, change
-            % FSC-A to FSC-W, etc. (You may also need to change the axes
-            % limits in the "showfscssc" function below.)
+            % This constructor function identifies which filters correspond
+            % to forward scatter (FSC) and side scatter (SSC). If you
+            % prefer to use width ("flight-time") FSC and SSC values for
+            % gating, change FSC-A to FSC-W, etc. (You may also need to
+            % change the axes limits in the "showfscssc" function below.)
             
+            % Get the header information; ignore the data for now
             FF.FileName = FileName;
             [fcsdat, fcshdr] = fca_readfcs(FF.FileName);
             clear fcsdat;
+            
+            % From the header information, get the filter names and set the
+            % thresholds for these filters to zero by default.
             for i=1:fcshdr.NumOfPar
                 FF.FilterNames{i} = fcshdr.par(1,i).name;
                 FF.FilterThresholds(i) = 0;
             end
+            
+            % Find the filters corresponding to forward and side scatter.
             for i=1:length(FF.FilterNames)
                 if strcmp(FF.FilterNames{i},'FSC-A')
             	    FF.FSCFilter = i;
@@ -45,17 +47,23 @@ classdef FCSFile < handle
                     end
                 end
             end
+            if FF.FSCFilter == 0 | FF.SSCFilter == 0
+                err('Could not find both FSC and SSC filters')
+            end
+            
+            % Set default forward and side scatter bounds.
             FF.BoundsX = [0.5E5 0.5E5 1E5 1E5];
             FF.BoundsY = [1E4 5E4 5E4 1E4];
-            % TODO: Check that FSC and SSC filters were actually found.
         end
       
       function FilterValues = getfiltervalues(FF,i)
-          % Retrieves the values for a given filter for all files within
-          % the FSC/SSC bounding region. Useful for plotting a histogram,
-          % thresholding, or calculating mean/standard deviation.
+          % Retrieves the fluorescence values for a given filter id for all
+          % events within the FSC/SSC bounding region. Useful for plotting
+          % a histogram, thresholding, or calculating mean/standard
+          % deviation.
           [fcsdat, fcshdr] = fca_readfcs(FF.FileName);
-          InsideBounds = inpolygon(fcsdat(:,FF.FSCFilter),fcsdat(:,FF.SSCFilter),FF.BoundsX,FF.BoundsY);
+          InsideBounds = inpolygon(fcsdat(:,FF.FSCFilter), ...
+            fcsdat(:,FF.SSCFilter),FF.BoundsX,FF.BoundsY);
           FilterValues = fcsdat(InsideBounds,i);
       end
         
@@ -73,14 +81,15 @@ classdef FCSFile < handle
           % value. (Useful for counting how many cells are CFP+, for
           % example.)
           
-          % Read in the data and header from the FCS file of interest using
-          % a third-party script. Won't actually use the header.
+          % Read in the data from the FCS file of interest using a
+          % third-party script. Won't actually use the header.
           [fcsdat, fcshdr] = fca_readfcs(FF.FileName);
           
           % Find cells within the FSC/SSC boundaries
           InsideBounds = FF.getfiltervalues(FilterNumber);
-          Total = length(find(InsideBounds > 0)); % Because occasionally the filter values are less than zero...
-          Above = length(find(InsideBounds > FF.FilterThresholds(FilterNumber)));
+          Total = length(find(InsideBounds > 0));
+          Above = length(find(InsideBounds > FF.FilterThresholds( ...
+              FilterNumber)));
       end
       
       function [Mean, Stdev] = meanandstdev(FF,FilterNumber)
@@ -102,7 +111,8 @@ classdef FCSFile < handle
           % Load the file and draw the first 10000 (or fewer) points
           [fcsdat, fcshdr] = fca_readfcs(FF.FileName);
           fcsdat = fcsdat(1:min(10000,length(fcsdat)),:);
-          scatter(fcsdat(:,FF.FSCFilter), fcsdat(:,FF.SSCFilter),1, 'k'); hold on;
+          scatter(fcsdat(:,FF.FSCFilter), fcsdat(:,FF.SSCFilter),1, 'k');
+          hold on;
           
           % Draw the polygonal FSC/SSC bounding region
           hroi=fill(FF.BoundsX,FF.BoundsY,'r');
